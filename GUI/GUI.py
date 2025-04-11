@@ -76,6 +76,7 @@ def resolve():
     marker.delete() # delete the marker
     startMonitoring() # monitor for next crash in queue
 
+# creates a test crash json file
 def test():
     # Open the image file and encode it
     with open("image/testIMG.jpg", "rb") as f:
@@ -98,9 +99,11 @@ def test():
 startMon = tk.Button(root,text="Start Monitoring",command=startMonitoring)
 startMon.pack()
 
+# resolves currently displayed crash
 resolve = tk.Button(root,text="Resolve",command=resolve)
 resolve.pack()
 
+# creates a test crash json file
 testButton = tk.Button(root,text="Create Test Crash",command=test)
 testButton.pack()
 
