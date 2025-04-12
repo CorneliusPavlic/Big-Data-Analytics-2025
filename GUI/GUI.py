@@ -1,12 +1,10 @@
 import tkinter as tk
-from tkintermapview import TkinterMapView # pip install tknintermapview
-from PIL import Image, ImageTk
+from map_view import create_map_widget, add_crash_marker, showIMG
 import time
 from queue import Queue
 import os
 import json
 import base64
-import io
 
 # variables
 stream = "./DataStream" # location of json files
@@ -21,8 +19,10 @@ root.minsize(1280,720)
 root.maxsize(1280,720)
 
 # map widget
-gmap_widget = TkinterMapView(root,width=1000,height=500)
-gmap_widget.pack(fill="both",side="right")
+gmap_widget = create_map_widget(root)
+
+# map marker
+marker = None
 
 # drop down menu for districts
 variable = tk.StringVar(root)
@@ -47,34 +47,24 @@ def monitor():
             os.remove(fullPath) # delete original json file
     root.after(500,monitor) # keep monitoring every 500 ms
 
-# pop up window for displaying photo of crash
-def showIMG(photo):
-    popup = tk.Toplevel(root)
-    popup.title("Crash Image")
-    popup.geometry("250x250")
-    imageLabel = tk.Label(popup,image=photo)
-    imageLabel.pack()
-
 # displays latest crash location
 def startMonitoring():
     # check if any crashes are present
     if (not queue.empty()):
         crash = queue.get()
-        # convert base64 image to displayable image in tkinter
-        B64Image = base64.b64decode(crash["image"])
-        fileImage = io.BytesIO(B64Image)
-        PILImage = Image.open(fileImage)
-        tkImage = ImageTk.PhotoImage(PILImage)
         # create marker for crash
         global marker # marker displaying accident
-        marker = gmap_widget.set_marker(crash["location"]["longitude"],crash["location"]["latitude"],text=crash["time"],command=lambda m=None: showIMG(tkImage))
+        marker = add_crash_marker(gmap_widget, crash, lambda photo: showIMG(root, photo))
     else:
         root.after(500,startMonitoring) # keep monitoring if no crash is found yet
 
 # resolves the most recent crash, moves onto looking for the next
 def resolve():
-    marker.delete() # delete the marker
-    startMonitoring() # monitor for next crash in queue
+    global marker
+    if marker:
+        marker.delete() # delete the marker
+        marker = None
+        startMonitoring() # monitor for next crash in queue
 
 # creates a test crash json file
 def test():
