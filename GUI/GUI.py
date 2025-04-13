@@ -1,5 +1,6 @@
 import tkinter as tk
 from map_view import create_map_widget, add_crash_marker, showIMG
+from screen_buttons import add_all_buttons
 import time
 from queue import Queue
 import os
@@ -10,6 +11,7 @@ import base64
 stream = "./DataStream" # location of json files
 queue = Queue() # holds crash data objects
 districts = ["District 1", "District 2", "District 3"] # available districts - get this info from a seperate file once we determine districts and their ranges
+isMonitoring = False
 
 # create root page
 root = tk.Tk()
@@ -48,7 +50,18 @@ def monitor():
     root.after(500,monitor) # keep monitoring every 500 ms
 
 # displays latest crash location
-def startMonitoring():
+def startMonitoring(shouldMonitor):
+    # toggles monitoring
+    global isMonitoring
+    if shouldMonitor is None:
+        if not isMonitoring:
+            return
+    else:
+        isMonitoring = shouldMonitor
+        if not isMonitoring:
+            return
+
+    print("Monitoring!")
     # check if any crashes are present
     if (not queue.empty()):
         crash = queue.get()
@@ -56,7 +69,7 @@ def startMonitoring():
         global marker # marker displaying accident
         marker = add_crash_marker(gmap_widget, crash, lambda photo: showIMG(root, photo))
     else:
-        root.after(500,startMonitoring) # keep monitoring if no crash is found yet
+        root.after(500, lambda: startMonitoring(None)) # keep monitoring if no crash is found yet
 
 # resolves the most recent crash, moves onto looking for the next
 def resolve():
@@ -64,7 +77,7 @@ def resolve():
     if marker:
         marker.delete() # delete the marker
         marker = None
-        startMonitoring() # monitor for next crash in queue
+        startMonitoring(True) # monitor for next crash in queue
 
 # creates a test crash json file
 def test():
@@ -84,10 +97,12 @@ def test():
     with open("./DataStream/test.json", "w") as json_file:
         json.dump(dictionary, json_file, indent=4)
 
+# add screen buttons
+button_functions ={
+    "Monitor": startMonitoring
+}
+add_all_buttons(gmap_widget, button_functions)
 
-# starts monitoring for a given district
-startMon = tk.Button(root,text="Start Monitoring",command=startMonitoring)
-startMon.pack()
 
 # resolves currently displayed crash
 resolve = tk.Button(root,text="Resolve",command=resolve)
