@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkintermapview import TkinterMapView
+import customtkinter as ctk
 
 # button variables
 is_monitoring = False
@@ -12,32 +13,28 @@ def onMonitorButtonPressed(button, monitor_func):
     if is_monitoring:
         button.configure(
             text="Stop Monitoring",
-            bg="#28a745",
-            relief="flat"
+            fg_color="#28a745"
         )
     else:
         button.configure(
             text="Start Monitoring",
-            bg="#007ACC",
-            relief="flat"
+            fg_color="#007ACC"
         )
 
 def add_monitoring_button(parent_frame, monitor_func):
-    monitorButton = tk.Button(
-        parent_frame,
-        text="Start Monitoring", 
-        bg="#007ACC",
-        fg="white",
+    monitorButton = ctk.CTkButton(
+        master=parent_frame,
+        text="Start Monitoring",
+        fg_color="#007ACC",
+        bg_color="#007ACC",
+        hover_color="#005A99",
+        text_color="white",
         font=("Segoe UI", 12, "bold"),
-        relief="flat",
-        bd=0,
-        padx=15, pady=8,
-        highlightthickness=0,
-        activebackground="gray",
-        activeforeground="white"
+        width=100,
+        height=40,
+        command=lambda: onMonitorButtonPressed(monitorButton, monitor_func),
     )
        
-    monitorButton.configure(command=lambda: onMonitorButtonPressed(monitorButton, monitor_func))
     monitorButton.place(relx=0.95, rely=0.11, anchor="ne")
 
 
@@ -46,21 +43,20 @@ def onResolveButtonPressed(resolveButton, resolve_func):
     resolve_func()
 
 def add_resolve_button(parent_frame, resolve_func):
-    resolveButton = tk.Button(
-        parent_frame,
+    resolveButton = ctk.CTkButton(
+        master=parent_frame,
         text="Resolve",
-        bg="#007ACC",
-        fg="white",
+        fg_color="#007ACC",
+        bg_color="#007ACC",
+        hover_color="#005A99",
+        text_color="white",
         font=("Segoe UI", 12, "bold"),
-        relief="flat",
-        bd=0,
-        padx=15, pady=8,
-        highlightthickness=0,
-        activebackground="gray",
-        activeforeground="white"
+        width=100,
+        height=40,
+        command=lambda: onResolveButtonPressed(resolveButton, resolve_func),
     )
     
-    resolveButton.configure(command=lambda: onResolveButtonPressed(resolveButton, resolve_func))
+    # resolveButton.configure(command=lambda: onResolveButtonPressed(resolveButton, resolve_func))
     resolveButton.place(relx=0.95, rely=0.18, anchor="ne")
 
 
@@ -69,23 +65,25 @@ def add_district_dropbutton(parent_frame, district_list, district_func):
     selected_district = tk.StringVar()
     selected_district.set(district_list[0])
     
-    district_dropdown = tk.OptionMenu(
-        parent_frame,
-        selected_district,
-        *district_list,
-        command=district_func
+    district_dropdown = ctk.CTkComboBox(
+        master=parent_frame,
+        values=district_list,
+        variable=selected_district,
+        command=district_func,
+        width=200,
+        height=40,
+        font=("Segoe UI", 12, "bold"),
+        state="readonly",
     )
     
-    district_dropdown.config(
-        bg="#007ACC",
-        fg="white",
-        font=("Segoe UI", 12, "bold"),
-        relief="flat",
-        bd=0,
-        padx=15, pady=8,
-        highlightthickness=0,
-        activebackground="gray",
-        activeforeground="white"
+    district_dropdown.configure(
+        fg_color="#007ACC",
+        bg_color="#007ACC",
+        text_color="white",
+    )
+    
+    district_dropdown.configure(
+        dropdown_fg_color="#007ACC",
     )
     
     district_dropdown.place(relx=0.95, rely=0.05, anchor="ne")
@@ -96,21 +94,19 @@ def onTestCrashButtonPressed(testCrashButton, test_func):
     test_func()
 
 def add_test_crash_button(parent_frame, test_func):
-    testCrashButton = tk.Button(
-        parent_frame,
+    testCrashButton = ctk.CTkButton(
+        master=parent_frame,
         text="Test Crash",
-        bg="#007ACC",
-        fg="white",
+        fg_color="#007ACC",
+        bg_color="#007ACC",
+        hover_color="#005A99",
+        text_color="white",
         font=("Segoe UI", 12, "bold"),
-        relief="flat",
-        bd=0,
-        padx=15, pady=8,
-        highlightthickness=0,
-        activebackground="gray",
-        activeforeground="white"
+        width=140,
+        height=40,
+        command=lambda: onTestCrashButtonPressed(testCrashButton, test_func),
     )
     
-    testCrashButton.configure(command=lambda: onTestCrashButtonPressed(testCrashButton, test_func))
     testCrashButton.place(relx=0.95, rely=0.95, anchor="se")
     
     
