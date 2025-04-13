@@ -1,5 +1,5 @@
 import tkinter as tk
-from map_view import create_map_widget, add_crash_marker, showIMG
+from map_view import create_map_widget, add_crash_marker, new_crash, resolve_crash
 from screen_buttons import add_all_buttons
 import time
 from queue import Queue
@@ -22,9 +22,6 @@ root.maxsize(1280,720)
 
 # map widget
 gmap_widget = create_map_widget(root)
-
-# map marker
-marker = None
 
 # constantly checks for new crashes
 def monitor():
@@ -54,24 +51,21 @@ def startMonitoring(shouldMonitor):
         isMonitoring = shouldMonitor
         if not isMonitoring:
             return
-
+    
     print("Monitoring!")
+    
     # check if any crashes are present
     if (not queue.empty()):
         crash = queue.get()
-        # create marker for crash
-        global marker # marker displaying accident
-        marker = add_crash_marker(gmap_widget, crash, lambda photo: showIMG(root, photo))
+        
+        # send new crash to map
+        new_crash(gmap_widget, crash, root)
     else:
         root.after(500, lambda: startMonitoring(None)) # keep monitoring if no crash is found yet
 
 # resolves the most recent crash, moves onto looking for the next
 def resolve():
-    global marker
-    if marker:
-        marker.delete() # delete the marker
-        marker = None
-        startMonitoring(None) # monitor for next crash in queue
+    resolve_crash(startMonitoring)
 
 # creates a test crash json file
 def test():

@@ -4,6 +4,8 @@ from PIL import Image, ImageTk
 import base64
 import io
 
+# variable
+marker = None
 
 # create map widget
 def create_map_widget(root):
@@ -35,3 +37,34 @@ def showIMG(root, photo):
     popup.geometry("250x250")
     imageLabel = tk.Label(popup,image=photo)
     imageLabel.pack()
+
+# animation for a more smooth zoom
+def zoom_in_animation(gmap_widget, target_zoom, delay):
+    current_zoom = gmap_widget.zoom
+    if current_zoom < target_zoom:
+        gmap_widget.set_zoom(current_zoom + 1)
+        gmap_widget.after(delay, lambda: zoom_in_animation(gmap_widget, target_zoom, delay))
+
+# zooms in on the crash
+def zoom_in_crash(gmap_widget, crash):
+    # crash location
+    lat = crash["location"]["latitude"]
+    lon = crash["location"]["longitude"]
+    
+    # set map center to crash location
+    gmap_widget.set_position(lon, lat)
+    zoom_in_animation(gmap_widget, target_zoom=15, delay=100)
+    
+# new crash data
+def new_crash(gmap_widget, crash, root):
+    global marker
+    marker = add_crash_marker(gmap_widget, crash, lambda photo: showIMG(root, photo))
+    zoom_in_crash(gmap_widget, crash)
+
+# resolves crash
+def resolve_crash(callback):
+    global marker
+    if marker:
+        marker.delete() # delete the marker
+        marker = None
+    callback(None) # monitor for next crash in queue
