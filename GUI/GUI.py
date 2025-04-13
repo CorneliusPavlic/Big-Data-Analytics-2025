@@ -26,12 +26,6 @@ gmap_widget = create_map_widget(root)
 # map marker
 marker = None
 
-# drop down menu for districts
-variable = tk.StringVar(root)
-variable.set(districts[0]) # default value
-w = tk.OptionMenu(root, variable, *districts)
-w.pack()
-
 # constantly checks for new crashes
 def monitor():
     files = [f for f in os.listdir(stream) if f.endswith('.json')] # gather any files in stream folder
@@ -77,7 +71,7 @@ def resolve():
     if marker:
         marker.delete() # delete the marker
         marker = None
-        startMonitoring(True) # monitor for next crash in queue
+        startMonitoring(None) # monitor for next crash in queue
 
 # creates a test crash json file
 def test():
@@ -98,19 +92,14 @@ def test():
         json.dump(dictionary, json_file, indent=4)
 
 # add screen buttons
-button_functions ={
-    "Monitor": startMonitoring
+button_data ={
+    "MonitorCallback": startMonitoring,
+    "ResolveCallback": resolve,
+    "DistrictList": districts,
+    "DistrictCallback": None,
+    "TestCrashCallback": test
 }
-add_all_buttons(gmap_widget, button_functions)
-
-
-# resolves currently displayed crash
-resolve = tk.Button(root,text="Resolve",command=resolve)
-resolve.pack()
-
-# creates a test crash json file
-testButton = tk.Button(root,text="Create Test Crash",command=test)
-testButton.pack()
+add_all_buttons(gmap_widget, button_data)
 
 # loops
 root.after(500,monitor)

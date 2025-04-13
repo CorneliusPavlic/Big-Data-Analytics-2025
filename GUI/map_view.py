@@ -12,6 +12,7 @@ def create_map_widget(root):
     # set map center to Ohio
     gmap_widget.set_position(40, -83)
     gmap_widget.set_zoom(7)
+    
     return gmap_widget
 
 # function to display the crash on the map
