@@ -1,17 +1,17 @@
 import tkinter as tk
-from tkintermapview import TkinterMapView # pip install tknintermapview
-from PIL import Image, ImageTk
+from map_view import create_map_widget, add_crash_marker, new_crash, resolve_crash
+from screen_buttons import add_all_buttons
 import time
 from queue import Queue
 import os
 import json
 import base64
-import io
 
 # variables
 stream = "./DataStream" # location of json files
 queue = Queue() # holds crash data objects
 districts = ["District 1", "District 2", "District 3"] # available districts - get this info from a seperate file once we determine districts and their ranges
+isMonitoring = False
 
 # create root page
 root = tk.Tk()
@@ -21,14 +21,7 @@ root.minsize(1280,720)
 root.maxsize(1280,720)
 
 # map widget
-gmap_widget = TkinterMapView(root,width=1000,height=500)
-gmap_widget.pack(fill="both",side="right")
-
-# drop down menu for districts
-variable = tk.StringVar(root)
-variable.set(districts[0]) # default value
-w = tk.OptionMenu(root, variable, *districts)
-w.pack()
+gmap_widget = create_map_widget(root)
 
 # constantly checks for new crashes
 def monitor():
@@ -47,34 +40,32 @@ def monitor():
             os.remove(fullPath) # delete original json file
     root.after(500,monitor) # keep monitoring every 500 ms
 
-# pop up window for displaying photo of crash
-def showIMG(photo):
-    popup = tk.Toplevel(root)
-    popup.title("Crash Image")
-    popup.geometry("250x250")
-    imageLabel = tk.Label(popup,image=photo)
-    imageLabel.pack()
-
 # displays latest crash location
-def startMonitoring():
+def startMonitoring(shouldMonitor):
+    # toggles monitoring
+    global isMonitoring
+    if shouldMonitor is None:
+        if not isMonitoring:
+            return
+    else:
+        isMonitoring = shouldMonitor
+        if not isMonitoring:
+            return
+    
+    print("Monitoring!")
+    
     # check if any crashes are present
     if (not queue.empty()):
         crash = queue.get()
-        # convert base64 image to displayable image in tkinter
-        B64Image = base64.b64decode(crash["image"])
-        fileImage = io.BytesIO(B64Image)
-        PILImage = Image.open(fileImage)
-        tkImage = ImageTk.PhotoImage(PILImage)
-        # create marker for crash
-        global marker # marker displaying accident
-        marker = gmap_widget.set_marker(crash["location"]["longitude"],crash["location"]["latitude"],text=crash["time"],command=lambda m=None: showIMG(tkImage))
+        
+        # send new crash to map
+        new_crash(gmap_widget, crash, root)
     else:
-        root.after(500,startMonitoring) # keep monitoring if no crash is found yet
+        root.after(500, lambda: startMonitoring(None)) # keep monitoring if no crash is found yet
 
 # resolves the most recent crash, moves onto looking for the next
 def resolve():
-    marker.delete() # delete the marker
-    startMonitoring() # monitor for next crash in queue
+    resolve_crash(startMonitoring)
 
 # creates a test crash json file
 def test():
@@ -94,18 +85,15 @@ def test():
     with open("./DataStream/test.json", "w") as json_file:
         json.dump(dictionary, json_file, indent=4)
 
-
-# starts monitoring for a given district
-startMon = tk.Button(root,text="Start Monitoring",command=startMonitoring)
-startMon.pack()
-
-# resolves currently displayed crash
-resolve = tk.Button(root,text="Resolve",command=resolve)
-resolve.pack()
-
-# creates a test crash json file
-testButton = tk.Button(root,text="Create Test Crash",command=test)
-testButton.pack()
+# add screen buttons
+button_data ={
+    "MonitorCallback": startMonitoring,
+    "ResolveCallback": resolve,
+    "DistrictList": districts,
+    "DistrictCallback": None,
+    "TestCrashCallback": test
+}
+add_all_buttons(gmap_widget, button_data)
 
 # loops
 root.after(500,monitor)
