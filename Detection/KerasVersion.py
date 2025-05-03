@@ -1,3 +1,7 @@
+import sys
+import os
+import glob
+import random
 import requests
 import cv2
 import numpy as np
@@ -7,202 +11,157 @@ import time
 import json
 from datetime import datetime
 from PIL import Image
+import base64
+from io import BytesIO
+from collections import deque
 
 # Constants
-CAMERA_URL = "https://itscameras.dot.state.oh.us/images/CLE/CLE032.jpg"
-CAMERA_LOCATION = "Cleveland, OH Camera CLE032"  # Hard-coded camera location
-MODEL_PATH = "accidents.keras"    # Path to your saved Keras model
+MODEL_PATH               = "accidents-local.keras"
+API_KEY                  = "c58c9ad9-31c0-41a9-8bac-b81c37935976"
+CAMERAS_ENDPOINT         = "https://publicapi.ohgo.com/api/v1/cameras"
+REGION                   = "ne‑ohio"
+CHECK_INTERVAL           = 0.01
+CRASH_SIMULATE_FOLDER    = "./Accident"
+CRASH_SIMULATE_INTERVAL  = 30
 
-# Check if GPU is available (TensorFlow will automatically use GPU if available)
-if tf.config.list_physical_devices('GPU'):
-    print("Using GPU")
-else:
-    print("Using CPU")
-
-def load_keras_model(model_path):
-    """
-    Load the accident detection model from a .keras file.
-    """
-    model = load_model(model_path)
-    # Optionally, you can print the model summary:
-    # model.summary()
-    return model
+def load_keras_model(path):
+    return load_model(path)
 
 def preprocess_image(image):
     """
-    Preprocess the image for the Keras model.
-    Adjusted to produce an input that, through the model's convolutional layers,
-    yields a flattened feature vector of size 14,400 (i.e. a feature map of 120x120).
-    
-    The changes here use a larger center crop.
+    Resize to 256×256, scale pixels to [0,1], add batch dim.
+    Matches the pipeline used by your offline test.
     """
-    # Convert from BGR (OpenCV) to RGB
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    pil_img = Image.fromarray(image_rgb)
-    
-    # Resize the image to 256x256 (or whatever size you used as the initial resize during training)
-    resized = pil_img.resize((256, 256))
-    
-    # Adjust the center crop size:
-    # Previously, cropping to 240x240 produced a feature map of 112x112.
-    # To get a feature map of 120x120 (i.e. flattened size of 14,400),
-    # we scale the crop size by approximately 120/112 ≈ 1.0714.
-    # For example, 240 * 1.0714 ≈ 257 (or 258 rounded).
-    new_width, new_height = 258, 258
-    width, height = resized.size
-    left = (width - new_width) // 2
-    top = (height - new_height) // 2
-    right = left + new_width
-    bottom = top + new_height
-    cropped = resized.crop((left, top, right, bottom))
-    
-    # Convert to a numpy array and scale pixel values to [0, 1]
-    image_array = np.array(cropped).astype(np.float32) / 255.0
-    
-    # Normalize using ImageNet statistics (change these if your training used different values)
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
-    image_norm = (image_array - mean) / std
-    
-    # Expand dimensions so the shape is (1, H, W, 3)
-    input_image = np.expand_dims(image_norm, axis=0)
-    return input_image
+    resized = cv2.resize(image, (256, 256))
+    arr     = resized.astype(np.float32) / 255.0
+    return np.expand_dims(arr, axis=0)
+
 
 def process_image_keras(model, image):
     """
-    Preprocess the image, run inference using the Keras model,
-    and return a tuple (crash_detected, confidence).
-    Assumes the model outputs two class scores (no crash, crash),
-    where class index 1 corresponds to a detected crash.
+    Run inference on the preprocessed image.
+    Assumes model.predict returns a single sigmoid probability P(no_accident).
+    Returns (crash_detected: bool, confidence: float(P_accident)).
     """
-    input_image = preprocess_image(image)
-    
-    # Run inference
-    predictions = model.predict(input_image)
-    
-    # Apply softmax to convert logits to probabilities
-    probabilities = tf.nn.softmax(predictions[0]).numpy()
-    
-    # Determine predicted class and its confidence
-    predicted_class = np.argmax(probabilities)
-    confidence = float(np.max(probabilities))
-    
-    # Assume class index 1 means accident/crash detected
-    crash_detected = (predicted_class == 1)
-    return crash_detected, confidence
+    inp = preprocess_image(image)          # shape (1, H, W, 3)
+    raw = model.predict(inp)               # shape (1,1) or (1,)
+    p_no_acc = float(raw.ravel()[0])       # scalar in [0,1]
+    p_acc    = 1.0 - p_no_acc              # probability of accident
+    crash    = (p_acc >= 0.95)              # threshold at 0.5
+    return crash, p_acc
+
+
+
+def fetch_cameras_list(api_key, region=REGION):
+    resp = requests.get(
+        CAMERAS_ENDPOINT,
+        params={"api-key": api_key, "region": region, "page-all": "true"},
+        timeout=10
+    )
+    resp.raise_for_status()
+    return resp.json().get("results", [])
 
 def fetch_camera_image(url):
-    """
-    Fetch an image from the camera URL and decode it using OpenCV.
-    """
     try:
-        response = requests.get(url, stream=True, timeout=10)
-        if response.status_code == 200:
-            image_array = np.asarray(bytearray(response.content), dtype=np.uint8)
-            image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-            return image
-        else:
-            print("Error fetching image, status code:", response.status_code)
+        r = requests.get(url, stream=True, timeout=10)
+        r.raise_for_status()
+        buf = np.asarray(bytearray(r.content), dtype=np.uint8)
+        return cv2.imdecode(buf, cv2.IMREAD_COLOR)
     except Exception as e:
-        print("Error fetching image:", e)
-    return None
+        print(f"Error fetching {url}: {e}")
+        return None
 
-def visualize_detection(crash_info):
-    """
-    Visualization placeholder: Print the crash event details and write to a JSON file.
-    Replace or extend this with your actual visualization/alert integration.
-    """
-    json_output = json.dumps(crash_info, indent=4)
-    print("Crash event detected:")
-    print(json_output)
-    
-    with open("crash_event.json", "w") as outfile:
-        outfile.write(json_output)
+def visualize_detection(lat, lon, image_bgr, out_dir="../GUI/DataStream"):
+    # 1. Ensure output directory exists
+    os.makedirs(out_dir, exist_ok=True)
 
-from collections import deque
+    # 2. Encode image as base64 JPEG
+    rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    pil = Image.fromarray(rgb)
+    buf = BytesIO()
+    pil.save(buf, format="JPEG")
+    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    # 3. Build payload
+    payload = {
+        "location": {"longitude": lat, "latitude": lon},
+        "time":     datetime.now().strftime("%H:%M:%S"),
+        "image":    b64
+    }
+
+    # 4. Create a unique filename per event
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # e.g. "20250416_153206_123"
+    filename = f"event_{ts}.json"
+    full_path = os.path.join(out_dir, filename)
+
+    # 5. Write to its own file
+    with open(full_path, "w") as f:
+        json.dump(payload, f, indent=4)
+
+    print(f"Wrote crash event to {full_path}")
 
 def main():
-    model = load_keras_model(MODEL_PATH)
-    print("Model loaded successfully.")
+    model       = load_keras_model(MODEL_PATH)
+    cameras     = fetch_cameras_list(API_KEY)
+    crash_paths = glob.glob(os.path.join(CRASH_SIMULATE_FOLDER, "*"))
+    if not crash_paths:
+        raise RuntimeError("No crash images found")
+    crash_images = [cv2.imread(p) for p in crash_paths]
 
-    check_interval = 3
-    alert_sent = False
+    print(f"Loaded model; {len(cameras)} cams, {len(crash_images)} crash imgs.")
 
-    # Rolling buffers for timing (max length = 50)
-    fetch_times = deque(maxlen=50)
-    inference_times = deque(maxlen=50)
-    loop_times = deque(maxlen=50)
-
-    iteration = 0
+    view_counter = 0
 
     while True:
-        start_loop = time.perf_counter()
+        loop_start = time.perf_counter()
 
-        image_fetch_start = time.perf_counter()
-        image = fetch_camera_image(CAMERA_URL)
-        image_fetch_end = time.perf_counter()
+        for cam in cameras:
+            lat, lon = cam["latitude"], cam["longitude"]
+            location = cam["location"]
 
-        if image is None:
-            print(f"[{datetime.now().isoformat()}] Failed to retrieve image. Retrying in {check_interval} seconds.")
-            time.sleep(check_interval)
-            continue
+            for view in cam.get("cameraViews", []):
+                view_counter += 1
+                is_sim = (view_counter % CRASH_SIMULATE_INTERVAL == 0)
 
-        processing_start = time.perf_counter()
-        crash_detected, confidence = process_image_keras(model, image)
-        processing_end = time.perf_counter()
+                # --- Fetch stage ---
+                t0 = time.perf_counter()
+                if is_sim:
+                    img = random.choice(crash_images)
+                else:
+                    img = fetch_camera_image(view["smallUrl"])
+                t1 = time.perf_counter()
+                fetch_time = t1 - t0
 
-        total_loop_time = time.perf_counter() - start_loop
+                if img is None:
+                    print(f"[{view_counter}] {location}: failed to fetch image ({fetch_time:.3f}s)")
+                    continue
 
-        # Save times
-        fetch_times.append(image_fetch_end - image_fetch_start)
-        inference_times.append(processing_end - processing_start)
-        loop_times.append(total_loop_time)
+                # --- Inference stage ---
+                t2 = time.perf_counter()
+                crash, conf = process_image_keras(model, img)
+                t3 = time.perf_counter()
+                inf_time = t3 - t2
 
-        # Display crash info
-        if crash_detected and not alert_sent:
-            timestamp_actual = datetime.now().isoformat()
-            crash_info = {
-                "where": CAMERA_LOCATION,
-                "when_actual": timestamp_actual,
-                "confidence": confidence
-            }
-            visualize_detection(crash_info)
-            alert_sent = True
-        else:
-            print(f"[{datetime.now().isoformat()}] No crash detected. Confidence: {confidence:.2f}")
-            alert_sent = False
+                # --- Visualization stage (only on crash) ---
+                vis_time = 0.0
+                if crash:
+                    t4 = time.perf_counter()
+                    visualize_detection(lat, lon, img)
+                    t5 = time.perf_counter()
+                    vis_time = t5 - t4
 
-        # Print individual performance
-        print(f"--- Iteration {iteration + 1} Performance ---")
-        print(f"Image Fetch Time     : {fetch_times[-1]:.3f} seconds")
-        print(f"Inference Time       : {inference_times[-1]:.3f} seconds")
-        print(f"Total Loop Time      : {loop_times[-1]:.3f} seconds")
-        
-        # Average report every 50 iterations
-        if len(fetch_times) == 50:
-            avg_fetch = sum(fetch_times) / 50
-            avg_inference = sum(inference_times) / 50
-            avg_loop = sum(loop_times) / 50
+                total_view_time = time.perf_counter() - t0
 
-            avg_report = (
-                f"\n=== 50 Iteration Average Report ({datetime.now().isoformat()}) ===\n"
-                f"Average Image Fetch Time : {avg_fetch:.3f} seconds\n"
-                f"Average Inference Time   : {avg_inference:.3f} seconds\n"
-                f"Average Total Loop Time  : {avg_loop:.3f} seconds\n"
-                f"=============================================================\n"
-            )
+                # Log all timings
+                print(
+                    f"[{view_counter:4d}] {location:30.30} | "
+                    f"Crash={crash} @ {conf:.2f} | "
+                    f"fetch={fetch_time:.3f}s, inf={inf_time:.3f}s, vis={vis_time:.3f}s, total={total_view_time:.3f}s"
+                )
 
-            # Print to console
-            print(avg_report)
-
-            # Append to text file
-            with open("performance_report.txt", "a") as report_file:
-                report_file.write(avg_report)
-
-
-        iteration += 1
-        time.sleep(check_interval)
-
+        loop_time = time.perf_counter() - loop_start
+        print(f"--- Loop complete in {loop_time:.3f}s ---\n")
+        time.sleep(CHECK_INTERVAL)
 
 
 if __name__ == "__main__":
